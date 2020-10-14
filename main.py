@@ -114,6 +114,7 @@ class Faktakontroll:
 class Hemnet:
     def __init__(self):
         self.location_id = None
+        self.results = {}
 
     @staticmethod
     def search_keywords(keyword):
@@ -162,8 +163,6 @@ class Hemnet:
         # list all the search results in current page
         lis = soup.find_all('li', {'class': 'normal-results__hit js-normal-list-item'})
 
-        results = []
-
         # get the data for each search result
         for li in lis:
             try:
@@ -199,19 +198,20 @@ class Hemnet:
                         break
                 result_id = json.loads(li['data-gtm-item-info'])['id']
 
-                results.append({
-                    'id': result_id,
-                    'address': address,
-                    'city': city,
-                    'area': self.parse_area(area),
-                    'floor': floor,
-                    'complete': False
-                })
+                # check if the result was found before, ignore the result if true
+                # otherwise, add it to the results dictionary
+                if result_id not in self.results:
+                    self.results.update({result_id: {
+                        'address': address,
+                        'city': city,
+                        'area': self.parse_area(area),
+                        'floor': floor,
+                        'complete': False
+                    }})
             except Exception as e:
                 # print(e)
                 # if any required data isn't present for a result then it will be skipped
                 pass
-        return results
 
     @staticmethod
     def parse_area(area_string):
@@ -235,11 +235,18 @@ class Hemnet:
 
         return area_string
 
-    def save_schema(self):
-        pass
+    def save_results(self):
+        # create the cache folder if it doesn't exist
+        os.makedirs(os.path.join(BASE_DIR, 'cache'), exist_ok=True)
 
-    def load_schema(self):
-        pass
+        with open(os.path.join(BASE_DIR, 'cache', f'{self.location_id}.json'), 'w', encoding='utf-8') as f:
+            json.dump(self.results, f, indent=2)
+
+    def load_results(self):
+        old_result_path = os.path.join(BASE_DIR, 'cache', f'{self.location_id}.json')
+        if os.path.exists(old_result_path):
+            with open(old_result_path, encoding='utf-8') as f:
+                self.results = json.load(f)
 
 
 if __name__ == '__main__':
