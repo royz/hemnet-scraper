@@ -115,6 +115,8 @@ class Hemnet:
     def __init__(self):
         self.location_id = None
         self.results = {}
+        self.new_results = 0
+        self.old_results = 0
 
     @staticmethod
     def search_keywords(keyword):
@@ -135,9 +137,12 @@ class Hemnet:
             return None
 
     def search(self, keyword, page_number=1):
+
         if not self.location_id:
             self.location_id = self.search_keywords(keyword)
-        print(f'{self.location_id}')
+            self.load_results()
+
+        print(f'location id: {self.location_id}')
 
         headers = {
             'authority': 'www.hemnet.se',
@@ -157,7 +162,6 @@ class Hemnet:
         }
 
         res = requests.get('https://www.hemnet.se/bostader', headers=headers, params=params)
-        print(res)
         soup = BeautifulSoup(res.content, 'html.parser')
 
         # list all the search results in current page
@@ -208,6 +212,9 @@ class Hemnet:
                         'floor': floor,
                         'complete': False
                     }})
+                    self.new_results += 1
+                else:
+                    self.old_results += 1
             except Exception as e:
                 # print(e)
                 # if any required data isn't present for a result then it will be skipped

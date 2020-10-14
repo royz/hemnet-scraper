@@ -1,6 +1,5 @@
 .idea/
 config.py
 *.json
-*.txt
 test*.*
 cache/
