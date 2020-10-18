@@ -1,5 +1,5 @@
 .idea/
 config.py
 *.json
-test*.*
+test.py
 cache/

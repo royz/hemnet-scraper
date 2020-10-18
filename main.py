@@ -1,3 +1,5 @@
+import re
+
 import requests
 import time
 import json
@@ -22,6 +24,10 @@ class Faktakontroll:
             tokens = json.load(f)
             self.refresh_token = tokens['refreshToken']
             self.access_token = tokens['accessToken']
+
+    @property
+    def current_time(self):
+        return str(int(time.time() * 1000))
 
     def write_config(self):
         tokens = {
@@ -63,11 +69,10 @@ class Faktakontroll:
             self.refresh_token = tokens['refreshToken']
             self.access_token = tokens['accessToken']
             self.write_config()
-            print(tokens)
         except Exception as e:
             print(f'error while refreshing tokens: {e}')
 
-    def search(self):
+    def search(self, address):
         cookies = {
             'ext_name': 'ojplmecpdpgccookcobabopnaifgidhf',
             'user': 'true',
@@ -85,41 +90,124 @@ class Faktakontroll:
             'Sec-Fetch-Site': 'same-origin',
             'Sec-Fetch-Mode': 'cors',
             'Sec-Fetch-Dest': 'empty',
-            'Referer': 'https://www.faktakontroll.se/app/sok?vad=Florav%C3%A4gen%201,%20Nyn%C3%A4shamn&typ=',
+            'Referer': 'https://www.faktakontroll.se/app/sok',
             'Accept-Language': 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
         }
 
         data = {
-            "searchString": "Florav\xE4gen 1, Nyn\xE4shamn",
+            "searchString": address,
             "filterType": "p",
             "subscriptionRefNo": "20.750.025.01"
         }
 
-        response = requests.post('https://www.faktakontroll.se/app/api/search', headers=headers, cookies=cookies,
-                                 json=data)
+        response = requests.post('https://www.faktakontroll.se/app/api/search',
+                                 headers=headers, cookies=cookies, json=data)
 
-        # status code 500 when access token expires
-        print(response)
-        with open('resp.json', 'w', encoding='utf-8') as f:
-            json.dump(response.json(), f, indent=2)
+        # refresh the tokens when their validity expires
+        if response.status_code != 200:
+            print('faktakontroll token expired. refreshing token...')
+            self.refresh_tokens()
+            return self.search(address)
 
-    def filter_results(self):
-        """
-        if area data present in faktakontroll result then check otherwise ignore result
-        if floor data present in faktakontroll result then check otherwise ignore result
-        """
-        pass
+        data = response.json()
+        results = data['hits']
+        result_ids = [result['id'] for result in results if result.get('individual')]
+        print(f'{len(result_ids)} matches found')
+
+        for result_id in result_ids:
+            individual_result = self.search_individual(result_id)
+
+        ## save the response as e json file
+        # with open('resp.json', 'w', encoding='utf-8') as f:
+        #     json.dump(response.json(), f, indent=2)
+
+    def search_individual(self, result_id):
+        cookies = {
+            'ext_name': 'ojplmecpdpgccookcobabopnaifgidhf',
+            'user': 'true',
+        }
+
+        headers = {
+            'Connection': 'keep-alive',
+            'Accept': 'application/json, text/plain, */*',
+            'X-Initialized-At': self.current_time,
+            'X-Auth-Token': self.access_token,
+            'User-Agent': USER_AGENT,
+            'DNT': '1',
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Dest': 'empty',
+            'Referer': 'https://www.faktakontroll.se/app/sok',
+            'Accept-Language': 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7,sv;q=0.6',
+        }
+
+        params = {'subscriptionRefNo': '20.750.025.01'}
+
+        try:
+            response = requests.get(f'https://www.faktakontroll.se/app/api/search/entity/{result_id}',
+                                    headers=headers, params=params, cookies=cookies)
+
+            user_data = response.json()['individual']
+
+            # get phone page_number
+            phone_number_list = user_data['phoneNumbers']
+            try:
+                phone_numbers = [phone_number['phoneNumber'] for phone_number in phone_number_list]
+            except:
+                phone_numbers = []
+
+            # get floor number
+            try:
+                street_address = user_data['fbfStreetAddress']
+                if 'lgh' in street_address:
+                    street_address_list = street_address.split()
+                    number = street_address_list[street_address_list.index('lgh')]
+                    floor = number.strip()[1]
+                else:
+                    floor = None
+            except:
+                floor = None
+
+            # get name
+            try:
+                first_name = user_data.get('firstNames')
+                middle_name = user_data.get('middleNames')
+                last_name = user_data.get('lastNames')
+
+                name = first_name or ''
+                if middle_name:
+                    name += f' {middle_name}'
+                if last_name:
+                    name += f' {last_name}'
+            except:
+                name = ''
+
+            # get area
+            try:
+                area = user_data['housingInfo']['area']
+            except:
+                area = None
+        except:
+            return None
+
+
+def filter_results(self):
+    """
+    if area data present in faktakontroll result then check otherwise ignore result
+    if floor data present in faktakontroll result then check otherwise ignore result
+    """
+    pass
 
 
 class Hemnet:
-    def __init__(self):
+    def __init__(self, keyword):
+        self.keyword = keyword
         self.location_id = None
         self.results = {}
         self.new_results = 0
         self.old_results = 0
 
-    @staticmethod
-    def search_keywords(keyword):
+    def search_keyword(self):
         headers = {
             'Accept': 'application/json, text/javascript, */*; q=0.01',
             'Referer': '',
@@ -128,21 +216,20 @@ class Hemnet:
             'X-Requested-With': 'XMLHttpRequest',
         }
 
-        response = requests.get(f'https://www.hemnet.se/locations/show?q={keyword}',
+        response = requests.get(f'https://www.hemnet.se/locations/show?q={self.keyword}',
                                 headers=headers)
         try:
-            return response.json()[0]['id']
+            data = response.json()[0]
+            print(f'search result: {data["name"]}, location id: {data["id"]}')
+            return data['id']
         except Exception as e:
             print(e)
             return None
 
-    def search(self, keyword, page_number=1):
-
+    def search(self, page_number=1):
         if not self.location_id:
-            self.location_id = self.search_keywords(keyword)
+            self.location_id = self.search_keyword()
             self.load_results()
-
-        print(f'location id: {self.location_id}')
 
         headers = {
             'authority': 'www.hemnet.se',
@@ -167,6 +254,9 @@ class Hemnet:
         # list all the search results in current page
         lis = soup.find_all('li', {'class': 'normal-results__hit js-normal-list-item'})
 
+        if len(lis) == 0:
+            return False
+
         # get the data for each search result
         for li in lis:
             try:
@@ -183,7 +273,10 @@ class Hemnet:
                     floor = None
                     for flr in adr_flr[1:]:
                         if 'tr' in flr:
-                            floor = flr.strip().removesuffix('tr').strip()
+                            try:
+                                floor = re.findall(r'\d', flr.lower().rpartition('tr')[0])[-1]
+                            except:
+                                pass
                             break
                 else:
                     address = address_and_floor.strip()
@@ -219,6 +312,8 @@ class Hemnet:
                 # print(e)
                 # if any required data isn't present for a result then it will be skipped
                 pass
+        self.save_results()
+        return True
 
     @staticmethod
     def parse_area(area_string):
@@ -240,7 +335,7 @@ class Hemnet:
         if '+' in area_string:
             area_string = area_string.split('+')[0].strip()
 
-        return area_string
+        return float(area_string)
 
     def save_results(self):
         # create the cache folder if it doesn't exist
@@ -257,5 +352,34 @@ class Hemnet:
 
 
 if __name__ == '__main__':
-    hemnet = Hemnet()
-    pprint(hemnet.search('st', 1))
+    search_keyword = input('search: ')
+    skip_hemnet = input('skip hemnet search? [y/n]: ').lower() == 'y'
+
+    hemnet = Hemnet(search_keyword)
+
+    # search the location on hemnet
+    if skip_hemnet:
+        print('loading saved hemnet data...')
+        hemnet.location_id = hemnet.search_keyword()
+        hemnet.load_results()
+        print(f'{len(hemnet.results)} results found.')
+    else:
+        print('searching hemnet...')
+        page_number = 1
+        while True:
+            # search for the keyword and keep vising
+            # next pages until no more results are found
+            results_found = hemnet.search(page_number=page_number)
+
+            if not results_found:
+                break
+            print(f'page {page_number}: total {hemnet.new_results + hemnet.old_results} '
+                  f'results found. {hemnet.new_results} new.')
+            page_number += 1
+    hemnet_search_results = hemnet.results
+
+    # search the results from hemnet on faktakontroll
+    # faktakontroll = Faktakontroll()
+    # faktakontroll.refresh_tokens()
+    # for result in hemnet_search_results:
+    #     pass
