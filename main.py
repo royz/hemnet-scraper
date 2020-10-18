@@ -111,17 +111,47 @@ class Faktakontroll:
 
         data = response.json()
         results = data['hits']
-        result_ids = [result['id'] for result in results if result.get('individual')]
-        print(f'{len(result_ids)} matches found')
+        individual_results = [result for result in results if result.get('individual')]
+        print(f'{len(individual_results)} results found')
 
-        for result_id in result_ids:
-            individual_result = self.search_individual(result_id)
+        for result in individual_results:
+            # get floor number
+            try:
+                street_address = result['fbfStreetAddress']
+                if 'lgh' in street_address:
+                    street_address_list = street_address.split()
+                    number = street_address_list[street_address_list.index('lgh')]
+                    floor = int(number.strip()[1])
+                else:
+                    floor = None
+            except:
+                floor = None
+
+            # get name
+            try:
+                first_name = result.get('firstNames')
+                middle_name = result.get('middleNames')
+                last_name = result.get('lastNames')
+
+                name = first_name or ''
+                if middle_name:
+                    name += f' {middle_name}'
+                if last_name:
+                    name += f' {last_name}'
+            except:
+                name = ''
+
+            # get area
+            try:
+                area = result['housingInfo']['area']
+            except:
+                area = None
 
         ## save the response as e json file
         # with open('resp.json', 'w', encoding='utf-8') as f:
         #     json.dump(response.json(), f, indent=2)
 
-    def search_individual(self, result_id):
+    def get_phone_number(self, result_id):
         cookies = {
             'ext_name': 'ojplmecpdpgccookcobabopnaifgidhf',
             'user': 'true',
@@ -146,49 +176,10 @@ class Faktakontroll:
         try:
             response = requests.get(f'https://www.faktakontroll.se/app/api/search/entity/{result_id}',
                                     headers=headers, params=params, cookies=cookies)
-
-            user_data = response.json()['individual']
-
-            # get phone page_number
-            phone_number_list = user_data['phoneNumbers']
-            try:
-                phone_numbers = [phone_number['phoneNumber'] for phone_number in phone_number_list]
-            except:
-                phone_numbers = []
-
-            # get floor number
-            try:
-                street_address = user_data['fbfStreetAddress']
-                if 'lgh' in street_address:
-                    street_address_list = street_address.split()
-                    number = street_address_list[street_address_list.index('lgh')]
-                    floor = number.strip()[1]
-                else:
-                    floor = None
-            except:
-                floor = None
-
-            # get name
-            try:
-                first_name = user_data.get('firstNames')
-                middle_name = user_data.get('middleNames')
-                last_name = user_data.get('lastNames')
-
-                name = first_name or ''
-                if middle_name:
-                    name += f' {middle_name}'
-                if last_name:
-                    name += f' {last_name}'
-            except:
-                name = ''
-
-            # get area
-            try:
-                area = user_data['housingInfo']['area']
-            except:
-                area = None
+            phone_number_list = response.json()['individual']['phoneNumbers']
+            return [phone_number['phoneNumber'] for phone_number in phone_number_list]
         except:
-            return None
+            return []
 
 
 def filter_results(self):
@@ -274,7 +265,7 @@ class Hemnet:
                     for flr in adr_flr[1:]:
                         if 'tr' in flr:
                             try:
-                                floor = re.findall(r'\d', flr.lower().rpartition('tr')[0])[-1]
+                                floor = int(re.findall(r'\d', flr.lower().rpartition('tr')[0])[-1])
                             except:
                                 pass
                             break
