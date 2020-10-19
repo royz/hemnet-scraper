@@ -72,7 +72,9 @@ class Faktakontroll:
         except Exception as e:
             print(f'error while refreshing tokens: {e}')
 
-    def search(self, address):
+    def search(self, hemnet_result):
+        search_address = f'{hemnet_result["address"]}, {hemnet_result["city"]}'
+        print(search_address, end=': ')
         cookies = {
             'ext_name': 'ojplmecpdpgccookcobabopnaifgidhf',
             'user': 'true',
@@ -95,7 +97,7 @@ class Faktakontroll:
         }
 
         data = {
-            "searchString": address,
+            "searchString": search_address,
             "filterType": "p",
             "subscriptionRefNo": "20.750.025.01"
         }
@@ -107,14 +109,16 @@ class Faktakontroll:
         if response.status_code != 200:
             print('faktakontroll token expired. refreshing token...')
             self.refresh_tokens()
-            return self.search(address)
+            return self.search(hemnet_result)
 
         data = response.json()
         results = data['hits']
         individual_results = [result for result in results if result.get('individual')]
         print(f'{len(individual_results)} results found')
 
+        matches = []
         for result in individual_results:
+            print(result)
             # get floor number
             try:
                 street_address = result['fbfStreetAddress']
@@ -147,11 +151,41 @@ class Faktakontroll:
             except:
                 area = None
 
-        ## save the response as e json file
-        # with open('resp.json', 'w', encoding='utf-8') as f:
-        #     json.dump(response.json(), f, indent=2)
+            # check if the data matches with hemnet data
+            potential_match = {'full_match': True}
+
+            try:
+                if hemnet_result['area'] == area:
+                    print('same area')
+                    pass
+                elif area - 1 < hemnet_result['area'] < area + 1:
+                    print('almost same area')
+                    potential_match['full_match'] = False
+                else:
+                    continue
+            except:
+                continue
+
+            if hemnet_result['floor'] and floor:
+                # if both hemnet and faktakontroll have floor info then check if they match
+                if hemnet_result['floor'] == floor:
+                    print('same floors')
+                    pass
+                else:
+                    # if the floors don't match, then don't include them as a match
+                    continue
+
+            # if area and floor data match for both sources, then add name and phone number
+            potential_match['name'] = name
+
+            # try to fetch the phone number if available
+            potential_match['phone'] = self.get_phone_number(result['id'])
+            matches.append(potential_match)
+        print(f'{len(results)} results found, {len(matches)} matches')
+        return hemnet_result | {'matches': matches, 'complete': True}
 
     def get_phone_number(self, result_id):
+        print('getting phone number')
         cookies = {
             'ext_name': 'ojplmecpdpgccookcobabopnaifgidhf',
             'user': 'true',
@@ -180,14 +214,6 @@ class Faktakontroll:
             return [phone_number['phoneNumber'] for phone_number in phone_number_list]
         except:
             return []
-
-
-def filter_results(self):
-    """
-    if area data present in faktakontroll result then check otherwise ignore result
-    if floor data present in faktakontroll result then check otherwise ignore result
-    """
-    pass
 
 
 class Hemnet:
@@ -342,6 +368,11 @@ class Hemnet:
                 self.results = json.load(f)
 
 
+def save_cache(data):
+    with open(os.path.join(BASE_DIR, 'cache', f'{hemnet.location_id}.json'), 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
+
+
 if __name__ == '__main__':
     search_keyword = input('search: ')
     skip_hemnet = input('skip hemnet search? [y/n]: ').lower() == 'y'
@@ -367,10 +398,14 @@ if __name__ == '__main__':
             print(f'page {page_number}: total {hemnet.new_results + hemnet.old_results} '
                   f'results found. {hemnet.new_results} new.')
             page_number += 1
-    hemnet_search_results = hemnet.results
 
     # search the results from hemnet on faktakontroll
-    # faktakontroll = Faktakontroll()
-    # faktakontroll.refresh_tokens()
-    # for result in hemnet_search_results:
-    #     pass
+    faktakontroll = Faktakontroll()
+    faktakontroll.refresh_tokens()
+    for result_id, result in hemnet.results.items():
+        if result['complete']:
+            pass
+        else:
+            faktakontroll_data = faktakontroll.search(result)
+            hemnet.results[result_id] |= faktakontroll_data
+            save_cache(hemnet.results)
