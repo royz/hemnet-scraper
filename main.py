@@ -114,11 +114,10 @@ class Faktakontroll:
         data = response.json()
         results = data['hits']
         individual_results = [result for result in results if result.get('individual')]
-        print(f'{len(individual_results)} results found')
+        # print(f'{len(individual_results)} results found')
 
         matches = []
         for result in individual_results:
-            print(result)
             # get floor number
             try:
                 street_address = result['fbfStreetAddress']
