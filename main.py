@@ -1,5 +1,5 @@
 import re
-
+import csv
 import requests
 import time
 import json
@@ -104,7 +104,6 @@ class Faktakontroll:
 
         response = requests.post('https://www.faktakontroll.se/app/api/search',
                                  headers=headers, cookies=cookies, json=data)
-
         # refresh the tokens when their validity expires
         if response.status_code != 200:
             print('faktakontroll token expired. refreshing token...')
@@ -113,21 +112,23 @@ class Faktakontroll:
 
         data = response.json()
         results = data['hits']
-        individual_results = [result for result in results if result.get('individual')]
+        individual_results = [result['individual'] for result in results if result.get('individual')]
         # print(f'{len(individual_results)} results found')
 
         matches = []
+        no_matches = []
         for result in individual_results:
+            # pprint(result)
+            # quit()
+            is_match = True
+
             # get floor number
-            try:
-                street_address = result['fbfStreetAddress']
-                if 'lgh' in street_address:
-                    street_address_list = street_address.split()
-                    number = street_address_list[street_address_list.index('lgh')]
-                    floor = int(number.strip()[1])
-                else:
-                    floor = None
-            except:
+            street_address = result['fbfStreetAddress']
+
+            if 'lgh' in street_address:
+                staddr = street_address[street_address.index('lgh'):]
+                floor = int(re.findall(r'\d', staddr)[1])
+            else:
                 floor = None
 
             # get name
@@ -155,36 +156,45 @@ class Faktakontroll:
 
             try:
                 if hemnet_result['area'] == area:
-                    print('same area')
                     pass
                 elif area - 1 < hemnet_result['area'] < area + 1:
-                    print('almost same area')
                     potential_match['full_match'] = False
                 else:
-                    continue
+                    is_match = False
             except:
-                continue
+                is_match = False
 
-            if hemnet_result['floor'] and floor:
+            if (hemnet_result['floor'] and not floor) or (not hemnet_result['floor'] and floor):
+                is_match = False
+            if (hemnet_result['floor'] is None and floor == 0) or (hemnet_result['floor'] == 0 and floor is None):
+                is_match = False
+
+            elif hemnet_result['floor'] and floor:
                 # if both hemnet and faktakontroll have floor info then check if they match
                 if hemnet_result['floor'] == floor:
-                    print('same floors')
                     pass
                 else:
                     # if the floors don't match, then don't include them as a match
-                    continue
+                    is_match = False
 
             # if area and floor data match for both sources, then add name and phone number
             potential_match['name'] = name
+            potential_match['floor'] = floor
+            potential_match['street_address'] = street_address
 
             # try to fetch the phone number if available
-            potential_match['phone'] = self.get_phone_number(result['id'])
-            matches.append(potential_match)
+            if is_match:
+                potential_match['phone'] = self.get_phone_number(result['id'])
+                matches.append(potential_match)
+            else:
+                no_matches.append(potential_match)
+                pass
         print(f'{len(results)} results found, {len(matches)} matches')
-        return hemnet_result | {'matches': matches, 'complete': True}
+        hemnet_result.update({'matches': matches, 'complete': True})
+        return hemnet_result
 
     def get_phone_number(self, result_id):
-        print('getting phone number')
+        # print('getting phone number')
         cookies = {
             'ext_name': 'ojplmecpdpgccookcobabopnaifgidhf',
             'user': 'true',
@@ -219,6 +229,7 @@ class Hemnet:
     def __init__(self, keyword):
         self.keyword = keyword
         self.location_id = None
+        self.location_name = None
         self.results = {}
         self.new_results = 0
         self.old_results = 0
@@ -236,6 +247,7 @@ class Hemnet:
                                 headers=headers)
         try:
             data = response.json()[0]
+            self.location_name = data["name"]
             print(f'search result: {data["name"]}, location id: {data["id"]}')
             return data['id']
         except Exception as e:
@@ -305,8 +317,10 @@ class Hemnet:
                 attribs_div = li.find('div', {'class': 'listing-card__attributes-row'})
                 attribs = attribs_div.find_all('div', {'class': 'listing-card__attribute'})
                 area = None
+                area_text = None
                 for attrib in attribs:
                     if 'm²' in attrib.text:
+                        area_text = attrib.text.strip()
                         area = attrib.text.strip().removesuffix('m²').strip()
                         break
                 result_id = json.loads(li['data-gtm-item-info'])['id']
@@ -315,9 +329,12 @@ class Hemnet:
                 # otherwise, add it to the results dictionary
                 if result_id not in self.results:
                     self.results.update({result_id: {
+                        'address_and_floor': address_and_floor,
+                        'location': location,
                         'address': address,
                         'city': city,
                         'area': self.parse_area(area),
+                        'area_text': area_text,
                         'floor': floor,
                         'complete': False
                     }})
@@ -372,6 +389,48 @@ def save_cache(data):
         json.dump(data, f, indent=2)
 
 
+def save_csv(json_data, location, search_id):
+    print('saving data...')
+    headers = ['Address', 'City', 'Area', 'Floor']
+    for person in range(1, 6):
+        headers.extend([f'Name {person}', 'Phone Numbers', 'Match Type'])
+
+    csv_data = []
+    for entry in json_data:
+        if not entry['complete'] or entry['matches'] == []:
+            continue
+        address = entry['address'] or ''
+        city = entry['city'] or ''
+        area = entry['area'] or ''
+        floor = entry['floor'] or ''
+        row = [address, city, area, floor]
+        for match in entry['matches']:
+            row.extend([
+                match['name'],
+                '; '.join(match['phone']),
+                'Full' if match['full_match'] else ''
+            ])
+        csv_data.append(row)
+
+        try:
+            filename = os.path.join(BASE_DIR, f'{location}.json')
+            with open(filename, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+
+                for row in csv_data:
+                    writer.writerow(row)
+        except:
+            filename = os.path.join(BASE_DIR, f'{search_id}.json')
+            with open(filename, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+
+                for row in csv_data:
+                    writer.writerow(row)
+        print(f'data saved as "{filename}"')
+
+
 if __name__ == '__main__':
     search_keyword = input('search: ')
     skip_hemnet = input('skip hemnet search? [y/n]: ').lower() == 'y'
@@ -406,5 +465,7 @@ if __name__ == '__main__':
             pass
         else:
             faktakontroll_data = faktakontroll.search(result)
-            hemnet.results[result_id] |= faktakontroll_data
+            hemnet.results[result_id].update(faktakontroll_data)
             save_cache(hemnet.results)
+
+    save_csv(hemnet.results, hemnet.location_name, hemnet.location_id)
