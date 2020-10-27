@@ -5,6 +5,7 @@ import time
 import json
 import os
 from bs4 import BeautifulSoup
+import openpyxl
 from pprint import pprint
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' \
@@ -65,16 +66,23 @@ class Faktakontroll:
             response = requests.post('https://www.faktakontroll.se/app/api/auth/refresh', headers=headers,
                                      cookies=cookies,
                                      data=data)
+            with open('reso.txt', 'w') as f:
+                f.write(response.text)
+
+            # print(response.status_code)
+            # quit()
+            # print(response.text.center(500, '+'))
             tokens = response.json()
             self.refresh_token = tokens['refreshToken']
             self.access_token = tokens['accessToken']
             self.write_config()
-        except Exception as e:
+        except StopIteration as e:
             print(f'error while refreshing tokens: {e}')
 
-    def search(self, hemnet_result):
+    def search(self, hemnet_result, index=0, total=0):
         search_address = f'{hemnet_result["address"]}, {hemnet_result["city"]}'
-        print(search_address, end=': ')
+        print(
+            f'[{index} / {total}] {search_address} [area: {hemnet_result["area"]}]', end=': ')
         cookies = {
             'ext_name': 'ojplmecpdpgccookcobabopnaifgidhf',
             'user': 'true',
@@ -112,7 +120,8 @@ class Faktakontroll:
 
         data = response.json()
         results = data['hits']
-        individual_results = [result['individual'] for result in results if result.get('individual')]
+        individual_results = [result['individual']
+                              for result in results if result.get('individual')]
         # print(f'{len(individual_results)} results found')
 
         matches = []
@@ -128,8 +137,13 @@ class Faktakontroll:
             if 'lgh' in street_address:
                 staddr = street_address[street_address.index('lgh'):]
                 floor = int(re.findall(r'\d', staddr)[1])
+                try:
+                    apartment = re.findall(r'\d{4}', staddr)[0]
+                except:
+                    apartment = None
             else:
                 floor = None
+                apartment = None
 
             # get name
             try:
@@ -180,6 +194,7 @@ class Faktakontroll:
             # if area and floor data match for both sources, then add name and phone number
             potential_match['name'] = name
             potential_match['floor'] = floor
+            potential_match['apartment'] = apartment
             potential_match['street_address'] = street_address
 
             # try to fetch the phone number if available
@@ -276,12 +291,17 @@ class Hemnet:
             'preferred_sorting': 'true',
         }
 
-        res = requests.get('https://www.hemnet.se/bostader', headers=headers, params=params)
+        res = requests.get('https://www.hemnet.se/bostader',
+                           headers=headers, params=params)
+        # with open('hem.html', 'w', encoding='utf-8') as f:
+        #     f.write(res.text)
+        #     quit()
+
         soup = BeautifulSoup(res.content, 'html.parser')
 
         # list all the search results in current page
-        lis = soup.find_all('li', {'class': 'normal-results__hit js-normal-list-item'})
-
+        lis = soup.find_all(
+            'li', {'class': 'normal-results__hit js-normal-list-item'})
         if len(lis) == 0:
             return False
 
@@ -302,7 +322,8 @@ class Hemnet:
                     for flr in adr_flr[1:]:
                         if 'tr' in flr:
                             try:
-                                floor = int(re.findall(r'\d', flr.lower().rpartition('tr')[0])[-1])
+                                floor = int(re.findall(
+                                    r'\d', flr.lower().rpartition('tr')[0])[-1])
                             except:
                                 pass
                             break
@@ -310,19 +331,21 @@ class Hemnet:
                     address = address_and_floor.strip()
                     floor = None
 
-                location = li.find('span', {'class': 'listing-card__location-name'}).text.strip()
+                location = li.find(
+                    'span', {'class': 'listing-card__location-name'}).text.strip()
                 city = location.split(',')[-1].strip()
-
                 # get the area value if present
-                attribs_div = li.find('div', {'class': 'listing-card__attributes-row'})
-                attribs = attribs_div.find_all('div', {'class': 'listing-card__attribute'})
+                attribs_div = li.find(
+                    'div', {'class': 'listing-card__attributes-row'})
+                attribs = attribs_div.find_all(
+                    'div', {'class': 'listing-card__attribute'})
+
                 area = None
                 area_text = None
                 for attrib in attribs:
                     if 'm²' in attrib.text:
                         area_text = attrib.text.strip()
                         area = attrib.text.strip().removesuffix('m²').strip()
-                        break
                 result_id = json.loads(li['data-gtm-item-info'])['id']
 
                 # check if the result was found before, ignore the result if true
@@ -378,7 +401,8 @@ class Hemnet:
             json.dump(self.results, f, indent=2)
 
     def load_results(self):
-        old_result_path = os.path.join(BASE_DIR, 'cache', f'{self.location_id}.json')
+        old_result_path = os.path.join(
+            BASE_DIR, 'cache', f'{self.location_id}.json')
         if os.path.exists(old_result_path):
             with open(old_result_path, encoding='utf-8') as f:
                 self.results = json.load(f)
@@ -396,7 +420,8 @@ def save_csv(json_data, location, search_id):
         headers.extend([f'Name {person}', 'Phone Numbers', 'Match Type'])
 
     csv_data = []
-    for entry in json_data:
+    for entry in json_data.values():
+        print(entry)
         if not entry['complete'] or entry['matches'] == []:
             continue
         address = entry['address'] or ''
@@ -413,7 +438,7 @@ def save_csv(json_data, location, search_id):
         csv_data.append(row)
 
         try:
-            filename = os.path.join(BASE_DIR, f'{location}.json')
+            filename = os.path.join(BASE_DIR, f'{location}.csv')
             with open(filename, 'w', encoding='utf-8', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
@@ -421,13 +446,66 @@ def save_csv(json_data, location, search_id):
                 for row in csv_data:
                     writer.writerow(row)
         except:
-            filename = os.path.join(BASE_DIR, f'{search_id}.json')
+            filename = os.path.join(BASE_DIR, f'{search_id}.csv')
             with open(filename, 'w', encoding='utf-8', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
 
                 for row in csv_data:
                     writer.writerow(row)
+        print(f'data saved as "{filename}"')
+
+
+def save_xlsx(json_data, location, search_id):
+    print('saving data...')
+    headers = ['Tot Hits', 'Tot Apartments',
+               'Address', 'City', 'Area', 'Floor']
+    for person in range(1, 6):
+        headers.extend([f'Name {person}', 'Phone Numbers',
+                        'Belong to Apartment', 'Match Type'])
+
+    csv_data = []
+    for entry in json_data.values():
+        if not entry['complete'] or entry['matches'] == []:
+            continue
+        address = entry['address'] or ''
+        city = entry['city'] or ''
+        area = entry['area'] or ''
+        floor = entry['floor'] or ''
+        total = len(entry['matches'])
+        apartments = []
+        row = [total, 0, address, city, area, floor]
+        for match in entry['matches']:
+            apartment = match['apartment'] or ''
+            if match['apartment'] and match['apartment'] in apartments:
+                pass
+            else:
+                apartments.append(match['apartment'])
+
+            row.extend([
+                match['name'],
+                '; '.join(match['phone']),
+                f'lgh {apartment}' if apartment else '',
+                'Full' if match['full_match'] else 'Partial'
+            ])
+        row[1] = len(apartments)
+        csv_data.append(row)
+
+    # create the excel workbook
+    wb = openpyxl.Workbook()
+    sheet = wb.active
+    sheet.append(headers)
+    for row in csv_data:
+        sheet.append(row)
+
+    # save the workbook
+    try:
+        filename = os.path.join(BASE_DIR, f'{location}.xlsx')
+        wb.save(filename)
+        print(f'data saved as "{filename}"')
+    except:
+        filename = os.path.join(BASE_DIR, f'{search_id}.xlsx')
+        wb.save(filename)
         print(f'data saved as "{filename}"')
 
 
@@ -453,6 +531,7 @@ if __name__ == '__main__':
 
             if not results_found:
                 break
+
             print(f'page {page_number}: total {hemnet.new_results + hemnet.old_results} '
                   f'results found. {hemnet.new_results} new.')
             page_number += 1
@@ -460,12 +539,14 @@ if __name__ == '__main__':
     # search the results from hemnet on faktakontroll
     faktakontroll = Faktakontroll()
     faktakontroll.refresh_tokens()
+    index = 1
+    total = len(hemnet.results)
     for result_id, result in hemnet.results.items():
         if result['complete']:
             pass
         else:
-            faktakontroll_data = faktakontroll.search(result)
+            faktakontroll_data = faktakontroll.search(result, index, total)
             hemnet.results[result_id].update(faktakontroll_data)
             save_cache(hemnet.results)
-
-    save_csv(hemnet.results, hemnet.location_name, hemnet.location_id)
+        index += 1
+    save_xlsx(hemnet.results, hemnet.location_name, hemnet.location_id)
