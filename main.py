@@ -66,12 +66,6 @@ class Faktakontroll:
             response = requests.post('https://www.faktakontroll.se/app/api/auth/refresh', headers=headers,
                                      cookies=cookies,
                                      data=data)
-            with open('reso.txt', 'w') as f:
-                f.write(response.text)
-
-            # print(response.status_code)
-            # quit()
-            # print(response.text.center(500, '+'))
             tokens = response.json()
             self.refresh_token = tokens['refreshToken']
             self.access_token = tokens['accessToken']
@@ -127,8 +121,6 @@ class Faktakontroll:
         matches = []
         no_matches = []
         for result in individual_results:
-            # pprint(result)
-            # quit()
             is_match = True
 
             # get floor number
@@ -178,8 +170,8 @@ class Faktakontroll:
             except:
                 is_match = False
 
-            if (hemnet_result['floor'] and not floor) or (not hemnet_result['floor'] and floor):
-                is_match = False
+            # if (hemnet_result['floor'] and not floor) or (not hemnet_result['floor'] and floor):
+            #     is_match = False
             if (hemnet_result['floor'] is None and floor == 0) or (hemnet_result['floor'] == 0 and floor is None):
                 is_match = False
 
@@ -289,6 +281,7 @@ class Hemnet:
             'order': 'desc',
             'page': str(page_number),
             'preferred_sorting': 'true',
+            'new_construction': 'exclude'
         }
 
         res = requests.get('https://www.hemnet.se/bostader',
