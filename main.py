@@ -7,6 +7,7 @@ import os
 from bs4 import BeautifulSoup
 import openpyxl
 from pprint import pprint
+from string import ascii_uppercase
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' \
              '(KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36'
@@ -406,55 +407,34 @@ def save_cache(data):
         json.dump(data, f, indent=2)
 
 
-def save_csv(json_data, location, search_id):
-    print('saving data...')
-    headers = ['Address', 'City', 'Area', 'Floor']
-    for person in range(1, 6):
-        headers.extend([f'Name {person}', 'Phone Numbers', 'Match Type'])
-
-    csv_data = []
-    for entry in json_data.values():
-        print(entry)
-        if not entry['complete'] or entry['matches'] == []:
-            continue
-        address = entry['address'] or ''
-        city = entry['city'] or ''
-        area = entry['area'] or ''
-        floor = entry['floor'] or ''
-        row = [address, city, area, floor]
-        for match in entry['matches']:
-            row.extend([
-                match['name'],
-                '; '.join(match['phone']),
-                'Full' if match['full_match'] else ''
-            ])
-        csv_data.append(row)
-
-        try:
-            filename = os.path.join(BASE_DIR, f'{location}.csv')
-            with open(filename, 'w', encoding='utf-8', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(headers)
-
-                for row in csv_data:
-                    writer.writerow(row)
-        except:
-            filename = os.path.join(BASE_DIR, f'{search_id}.csv')
-            with open(filename, 'w', encoding='utf-8', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(headers)
-
-                for row in csv_data:
-                    writer.writerow(row)
-        print(f'data saved as "{filename}"')
-
-
 def save_xlsx(json_data, location, search_id):
     print('saving data...')
     headers = ['Tot Hits', 'Tot Apartments',
                'Address', 'City', 'Area', 'Floor']
-    for person in range(1, 6):
-        headers.extend([f'Name {person}', 'Phone Numbers',
+
+    max_matches = len(max(json_data.values(), key=lambda value: len(value['matches']))['matches'])
+    print(max_matches)
+
+    dark_columns = ['G']
+    dark_column_index = 6
+    prefix_index = -1
+    for i in range(max_matches - 1):
+        if dark_column_index + 5 > 25:
+            prefix_index += 1
+            dark_column_index = dark_column_index + 5 - 26
+        else:
+            dark_column_index += 5
+            print(dark_column_index)
+        if prefix_index != -1:
+            prefix = ascii_uppercase[prefix_index]
+        else:
+            prefix = ''
+        dark_columns.append(
+            f'{prefix}{ascii_uppercase[dark_column_index]}'
+        )
+
+    for person in range(1, max_matches):
+        headers.extend(['', f'Name {person}', 'Phone Numbers',
                         'Belong to Apartment', 'Match Type'])
 
     csv_data = []
@@ -476,6 +456,7 @@ def save_xlsx(json_data, location, search_id):
                 apartments.append(match['apartment'])
 
             row.extend([
+                '',  # empty row to separate the users
                 match['name'],
                 '; '.join(match['phone']),
                 f'lgh {apartment}' if apartment else '',
@@ -530,6 +511,8 @@ if __name__ == '__main__':
             page_number += 1
 
     # search the results from hemnet on faktakontroll
+    print('\n\n')
+    print(' searching faktakontroll '.center(100, '*'))
     faktakontroll = Faktakontroll()
     faktakontroll.refresh_tokens()
     index = 1
