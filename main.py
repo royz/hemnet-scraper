@@ -415,7 +415,6 @@ def save_xlsx(json_data, location, search_id):
 
     # get the number of maximum matches
     max_matches = len(max(json_data.values(), key=lambda value: len(value['matches']))['matches'])
-    print(max_matches)
 
     # get the column names which are to be darkened for separation
     dark_columns = ['G']
@@ -427,7 +426,6 @@ def save_xlsx(json_data, location, search_id):
             dark_column_index = dark_column_index + 5 - 26
         else:
             dark_column_index += 5
-            print(dark_column_index)
         if prefix_index != -1:
             prefix = ascii_uppercase[prefix_index]
         else:
@@ -520,18 +518,18 @@ if __name__ == '__main__':
             page_number += 1
 
     # search the results from hemnet on faktakontroll
-    print('\n\n')
-    print(' searching faktakontroll '.center(100, '*'))
-    faktakontroll = Faktakontroll()
-    faktakontroll.refresh_tokens()
-    index = 1
-    total = len(hemnet.results)
-    for result_id, result in hemnet.results.items():
-        if result['complete']:
-            pass
-        else:
-            faktakontroll_data = faktakontroll.search(result, index, total)
-            hemnet.results[result_id].update(faktakontroll_data)
-            save_cache(hemnet.results)
-        index += 1
+    # print('\n\n')
+    # print(' searching faktakontroll '.center(100, '*'))
+    # faktakontroll = Faktakontroll()
+    # faktakontroll.refresh_tokens()
+    # index = 1
+    # total = len(hemnet.results)
+    # for result_id, result in hemnet.results.items():
+    #     if result['complete']:
+    #         pass
+    #     else:
+    #         faktakontroll_data = faktakontroll.search(result, index, total)
+    #         hemnet.results[result_id].update(faktakontroll_data)
+    #         save_cache(hemnet.results)
+    #     index += 1
     save_xlsx(hemnet.results, hemnet.location_name, hemnet.location_id)
