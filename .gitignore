@@ -4,3 +4,5 @@ config.py
 test*.py
 cache/
 *.html
+*.xlsx
+*.csv
