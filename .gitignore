@@ -1,7 +1,6 @@
 .idea/
 config.py
 *.json
-test.py
+test*.py
 cache/
 *.html
-test2.py

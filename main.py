@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 import openpyxl
 from pprint import pprint
 from string import ascii_uppercase
+from openpyxl.styles import PatternFill
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' \
              '(KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36'
@@ -412,9 +413,11 @@ def save_xlsx(json_data, location, search_id):
     headers = ['Tot Hits', 'Tot Apartments',
                'Address', 'City', 'Area', 'Floor']
 
+    # get the number of maximum matches
     max_matches = len(max(json_data.values(), key=lambda value: len(value['matches']))['matches'])
     print(max_matches)
 
+    # get the column names which are to be darkened for separation
     dark_columns = ['G']
     dark_column_index = 6
     prefix_index = -1
@@ -433,7 +436,7 @@ def save_xlsx(json_data, location, search_id):
             f'{prefix}{ascii_uppercase[dark_column_index]}'
         )
 
-    for person in range(1, max_matches):
+    for person in range(1, max_matches + 1):
         headers.extend(['', f'Name {person}', 'Phone Numbers',
                         'Belong to Apartment', 'Match Type'])
 
@@ -471,6 +474,12 @@ def save_xlsx(json_data, location, search_id):
     sheet.append(headers)
     for row in csv_data:
         sheet.append(row)
+
+    # fill the blank columns with black
+    for col in dark_columns:
+        for row in range(1, sheet.max_row + 1):
+            sheet[f'{col}{row}'].fill = PatternFill(fill_type="solid", bgColor='000000')
+        sheet.column_dimensions[col].width = 4
 
     # save the workbook
     try:
