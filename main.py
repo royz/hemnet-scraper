@@ -1,5 +1,4 @@
 import re
-import csv
 import requests
 import time
 import json
@@ -408,7 +407,7 @@ def save_cache(data):
         json.dump(data, f, indent=2)
 
 
-def save_xlsx(json_data, location, search_id):
+def save_xlsx_old(json_data, location, search_id):
     print('saving data...')
     headers = ['Tot Hits', 'Tot Apartments',
                'Address', 'City', 'Area', 'Floor']
@@ -449,7 +448,16 @@ def save_xlsx(json_data, location, search_id):
         total = len(entry['matches'])
         apartments = []
         row = [total, 0, address, city, area, floor]
+        sorted_matches = []
+
+        # sort the matches if the have phone numbers
         for match in entry['matches']:
+            if len(match['phone']) > 0:
+                sorted_matches.insert(0, match)
+            else:
+                sorted_matches.append(match)
+
+        for match in sorted_matches:
             apartment = match['apartment'] or ''
             if match['apartment'] and match['apartment'] in apartments:
                 pass
@@ -478,6 +486,58 @@ def save_xlsx(json_data, location, search_id):
         for row in range(1, sheet.max_row + 1):
             sheet[f'{col}{row}'].fill = PatternFill(fill_type="solid", bgColor='000000')
         sheet.column_dimensions[col].width = 4
+
+    # save the workbook
+    try:
+        filename = os.path.join(BASE_DIR, f'{location}.xlsx')
+        wb.save(filename)
+        print(f'data saved as "{filename}"')
+    except:
+        filename = os.path.join(BASE_DIR, f'{search_id}.xlsx')
+        wb.save(filename)
+        print(f'data saved as "{filename}"')
+
+
+def save_xlsx(json_data, location, search_id):
+    print('saving data...')
+    headers = ['Id', 'Tot Hits', 'Tot Apartments', 'Address', 'City', 'Area',
+               'Floor', 'Name', 'Phone', 'Apartment', 'Type']
+
+    csv_data = []
+    for match_id, entry in json_data.items():
+        if not entry['complete'] or entry['matches'] == []:
+            continue
+        address = entry['address'] or ''
+        city = entry['city'] or ''
+        area = entry['area'] or ''
+        floor = entry['floor'] or ''
+        total_matches = len(entry['matches'])
+        apartments = []
+        row_template = [match_id, total_matches, 0, address, city, area, floor]
+
+        for match in entry['matches']:
+            new_row = row_template.copy()
+            apartment = match['apartment'] or ''
+            if match['apartment'] and match['apartment'] in apartments:
+                pass
+            else:
+                apartments.append(match['apartment'])
+
+            new_row[2] = len(apartments)
+            new_row += [
+                match['name'],
+                '; '.join(match['phone']),
+                f'lgh {apartment}' if apartment else '',
+                'Full' if match['full_match'] else 'Partial'
+            ]
+            csv_data.append(new_row)
+
+    # create the excel workbook
+    wb = openpyxl.Workbook()
+    sheet = wb.active
+    sheet.append(headers)
+    for row in csv_data:
+        sheet.append(row)
 
     # save the workbook
     try:
