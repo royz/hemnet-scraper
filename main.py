@@ -407,103 +407,12 @@ def save_cache(data):
         json.dump(data, f, indent=2)
 
 
-def save_xlsx_old(json_data, location, search_id):
-    print('saving data...')
-    headers = ['Tot Hits', 'Tot Apartments',
-               'Address', 'City', 'Area', 'Floor']
-
-    # get the number of maximum matches
-    max_matches = len(max(json_data.values(), key=lambda value: len(value['matches']))['matches'])
-
-    # get the column names which are to be darkened for separation
-    dark_columns = ['G']
-    dark_column_index = 6
-    prefix_index = -1
-    for i in range(max_matches - 1):
-        if dark_column_index + 5 > 25:
-            prefix_index += 1
-            dark_column_index = dark_column_index + 5 - 26
-        else:
-            dark_column_index += 5
-        if prefix_index != -1:
-            prefix = ascii_uppercase[prefix_index]
-        else:
-            prefix = ''
-        dark_columns.append(
-            f'{prefix}{ascii_uppercase[dark_column_index]}'
-        )
-
-    for person in range(1, max_matches + 1):
-        headers.extend(['', f'Name {person}', 'Phone Numbers',
-                        'Belong to Apartment', 'Match Type'])
-
-    csv_data = []
-    for entry in json_data.values():
-        if not entry['complete'] or entry['matches'] == []:
-            continue
-        address = entry['address'] or ''
-        city = entry['city'] or ''
-        area = entry['area'] or ''
-        floor = entry['floor'] or ''
-        total = len(entry['matches'])
-        apartments = []
-        row = [total, 0, address, city, area, floor]
-        sorted_matches = []
-
-        # sort the matches if the have phone numbers
-        for match in entry['matches']:
-            if len(match['phone']) > 0:
-                sorted_matches.insert(0, match)
-            else:
-                sorted_matches.append(match)
-
-        for match in sorted_matches:
-            apartment = match['apartment'] or ''
-            if match['apartment'] and match['apartment'] in apartments:
-                pass
-            else:
-                apartments.append(match['apartment'])
-
-            row.extend([
-                '',  # empty row to separate the users
-                match['name'],
-                '; '.join(match['phone']),
-                f'lgh {apartment}' if apartment else '',
-                'Full' if match['full_match'] else 'Partial'
-            ])
-        row[1] = len(apartments)
-        csv_data.append(row)
-
-    # create the excel workbook
-    wb = openpyxl.Workbook()
-    sheet = wb.active
-    sheet.append(headers)
-    for row in csv_data:
-        sheet.append(row)
-
-    # fill the blank columns with black
-    for col in dark_columns:
-        for row in range(1, sheet.max_row + 1):
-            sheet[f'{col}{row}'].fill = PatternFill(fill_type="solid", bgColor='000000')
-        sheet.column_dimensions[col].width = 4
-
-    # save the workbook
-    try:
-        filename = os.path.join(BASE_DIR, f'{location}.xlsx')
-        wb.save(filename)
-        print(f'data saved as "{filename}"')
-    except:
-        filename = os.path.join(BASE_DIR, f'{search_id}.xlsx')
-        wb.save(filename)
-        print(f'data saved as "{filename}"')
-
-
 def save_xlsx(json_data, location, search_id):
     print('saving data...')
     headers = ['Id', 'Tot Hits', 'Tot Apartments', 'Address', 'City', 'Area',
                'Floor', 'Name', 'Phone', 'Apartment', 'Type']
 
-    csv_data = []
+    data = []
     for match_id, entry in json_data.items():
         if not entry['complete'] or entry['matches'] == []:
             continue
@@ -515,6 +424,7 @@ def save_xlsx(json_data, location, search_id):
         apartments = []
         row_template = [match_id, total_matches, 0, address, city, area, floor]
 
+        new_rows = []
         for match in entry['matches']:
             new_row = row_template.copy()
             apartment = match['apartment'] or ''
@@ -530,13 +440,15 @@ def save_xlsx(json_data, location, search_id):
                 f'lgh {apartment}' if apartment else '',
                 'Full' if match['full_match'] else 'Partial'
             ]
-            csv_data.append(new_row)
+            new_rows.append(new_row)
+        if len(new_rows) <= 8:
+            data.extend(new_rows)
 
     # create the excel workbook
     wb = openpyxl.Workbook()
     sheet = wb.active
     sheet.append(headers)
-    for row in csv_data:
+    for row in data:
         sheet.append(row)
 
     # save the workbook
