@@ -433,7 +433,6 @@ def save_xlsx(json_data, location, search_id):
             else:
                 apartments.append(match['apartment'])
 
-            new_row[2] = len(apartments)
             new_row += [
                 match['name'],
                 '; '.join(match['phone']),
@@ -441,6 +440,10 @@ def save_xlsx(json_data, location, search_id):
                 'Full' if match['full_match'] else 'Partial'
             ]
             new_rows.append(new_row)
+
+            for row in new_rows:
+                row[2] = len(apartments)
+
         if len(new_rows) <= 8:
             data.extend(new_rows)
 
