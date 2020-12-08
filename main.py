@@ -442,7 +442,10 @@ def save_xlsx(json_data, location, search_id):
             new_rows.append(new_row)
 
             for row in new_rows:
-                row[2] = len(apartments)
+                if row[9].strip() == '':
+                    row[2] = 1
+                else:
+                    row[2] = len(apartments)
 
         if len(new_rows) <= 8:
             data.extend(new_rows)
