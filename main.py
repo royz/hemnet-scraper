@@ -341,13 +341,6 @@ class Hemnet:
                     if 'm²' in attrib.text:
                         area_text = attrib.text.strip()
                         area = attrib.text.strip().removesuffix('m²').strip()
-                        try:
-                            span = attrib.find('span')
-                            extra_area_text = span.text.strip()
-                            extra_area = int(extra_area_text.removesuffix('m²').strip())
-                            print(f'extra area: {extra_area}')
-                        except:
-                            pass
                 result_id = json.loads(li['data-gtm-item-info'])['id']
 
                 # check if the result was found before, ignore the result if true
@@ -358,11 +351,12 @@ class Hemnet:
                         'location': location,
                         'address': address,
                         'city': city,
-                        'area': self.parse_area(area),
-                        'extra_area': extra_area,
+                        'area': self.parse_area(area)[0],
+                        'extra_area': self.parse_area(area)[1],
                         'area_text': area_text,
                         'floor': floor,
-                        'complete': False
+                        'complete': False,
+                        'sold': False
                     }})
                     self.new_results += 1
                 else:
@@ -379,22 +373,13 @@ class Hemnet:
         # remove any extra characters from the area value
         area_string = area_string.strip().removesuffix('m²').strip().replace(',', '.')
 
-        """
-        # sometimes the area is displayed as addition of multiple values.
-        # parse and add those numbers in that case
-        if '+' in area_string:
-            try:
-                area_string = str(sum(map(int, area_string.split('+'))))
-            except:
-                pass
-        """
-
-        # faktakontroll.se lists only the first value if hemnet shows in "a + b" format
-        # so return the first value if the area has +  in it
-        if '+' in area_string:
-            area_string = area_string.split('+')[0].strip()
-
-        return float(area_string)
+        area_strings = area_string.split('+')
+        area = float(area_strings[0].strip())
+        if len(area_strings) > 1:
+            extra_area = float(area_strings[1].strip())
+        else:
+            extra_area = None
+        return area, extra_area
 
     def save_results(self):
         # create the cache folder if it doesn't exist
@@ -419,7 +404,7 @@ def save_cache(data):
 def save_xlsx(json_data, location, search_id):
     print('saving data...')
     headers = ['Id', 'Tot Hits', 'Tot Apartments', 'Address', 'City', 'Area', 'Extra Area',
-               'Floor', 'Name', 'Phone', 'Apartment', 'Type']
+               'Floor', 'Name', 'Phone', 'Apartment', 'Type', 'Sold']
 
     data = []
     for match_id, entry in json_data.items():
@@ -447,7 +432,8 @@ def save_xlsx(json_data, location, search_id):
                 match['name'],
                 '; '.join(match['phone']),
                 f'lgh {apartment}' if apartment else '',
-                'Full' if match['full_match'] else 'Partial'
+                'Full' if match['full_match'] else 'Partial',
+                entry['sold']
             ]
             new_rows.append(new_row)
 
