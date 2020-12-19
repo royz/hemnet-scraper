@@ -260,8 +260,6 @@ class Hemnet:
             return None
 
     def search(self, page_number=1):
-        if page_number == 3:
-            return
         if not self.location_id:
             self.location_id = self.search_keyword()
             self.load_results()
@@ -419,6 +417,36 @@ class Hemnet:
         else:
             return 'Not Found'
 
+    def search_sold_properties(self):
+        headers = {
+            'authority': 'www.hemnet.se',
+            'user-agent': USER_AGENT,
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-user': '?1',
+            'sec-fetch-dest': 'document',
+        }
+
+        sold_ids = []
+
+        for page_num in range(1, 51):
+            print(f'page: {page_num}')
+            params = {
+                'housing_form_groups[]': ['houses', 'row_houses', 'apartments'],
+                'location_ids[]': '17744',
+                'page': page_num
+            }
+
+            response = requests.get('https://www.hemnet.se/salda/bostader', headers=headers, params=params)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            links = soup.find_all('a', {'class': 'item-link-container'})
+
+            for link in links:
+                href = link['href']
+                sold_id = href.split('-')[-1]
+                sold_ids.append(sold_id)
+        return sold_ids
+
 
 def save_cache(data):
     with open(os.path.join(BASE_DIR, 'cache', f'{hemnet.location_id}.json'), 'w', encoding='utf-8') as f:
@@ -492,6 +520,30 @@ def save_xlsx(json_data, location, search_id):
 
 if __name__ == '__main__':
     search_keyword = input('search: ')
+
+    print('choose an option:', '1. new', '2. sold', sep='\n')
+    new_or_sold = input('option: ').strip()
+    if new_or_sold == '2':
+        hemnet = Hemnet(search_keyword)
+        search_id = hemnet.search_keyword()
+        if not os.path.exists(os.path.join(BASE_DIR, 'cache', f'{search_id}.json')):
+            print(f'search cache not found for {hemnet.location_name}')
+            quit()
+        else:
+            hemnet.load_results()
+            print('getting list of sold properties...')
+            sold_properties = hemnet.search_sold_properties()
+
+            print(len(sold_properties), 'sold properties found')
+
+            for property_id in hemnet.results:
+                if property_id in sold_properties:
+                    hemnet.results[property_id]['sold'] = True
+
+            hemnet.save_results()
+            save_xlsx(hemnet.results, hemnet.location_name, hemnet.location_id)
+        quit()
+
     skip_hemnet = input('skip hemnet search? [y/n]: ').lower() == 'y'
 
     hemnet = Hemnet(search_keyword)
