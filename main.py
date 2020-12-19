@@ -336,10 +336,18 @@ class Hemnet:
 
                 area = None
                 area_text = None
+                extra_area = None
                 for attrib in attribs:
                     if 'm²' in attrib.text:
                         area_text = attrib.text.strip()
                         area = attrib.text.strip().removesuffix('m²').strip()
+                        try:
+                            span = attrib.find('span')
+                            extra_area_text = span.text.strip()
+                            extra_area = int(extra_area_text.removesuffix('m²').strip())
+                            print(f'extra area: {extra_area}')
+                        except:
+                            pass
                 result_id = json.loads(li['data-gtm-item-info'])['id']
 
                 # check if the result was found before, ignore the result if true
@@ -351,6 +359,7 @@ class Hemnet:
                         'address': address,
                         'city': city,
                         'area': self.parse_area(area),
+                        'extra_area': extra_area,
                         'area_text': area_text,
                         'floor': floor,
                         'complete': False
@@ -409,7 +418,7 @@ def save_cache(data):
 
 def save_xlsx(json_data, location, search_id):
     print('saving data...')
-    headers = ['Id', 'Tot Hits', 'Tot Apartments', 'Address', 'City', 'Area',
+    headers = ['Id', 'Tot Hits', 'Tot Apartments', 'Address', 'City', 'Area', 'Extra Area',
                'Floor', 'Name', 'Phone', 'Apartment', 'Type']
 
     data = []
@@ -419,10 +428,11 @@ def save_xlsx(json_data, location, search_id):
         address = entry['address'] or ''
         city = entry['city'] or ''
         area = entry['area'] or ''
+        extra_area = entry['extra_area'] or ''
         floor = entry['floor'] or ''
         total_matches = len(entry['matches'])
         apartments = []
-        row_template = [match_id, total_matches, 0, address, city, area, floor]
+        row_template = [match_id, total_matches, 0, address, city, area, extra_area, floor]
 
         new_rows = []
         for match in entry['matches']:
@@ -441,8 +451,9 @@ def save_xlsx(json_data, location, search_id):
             ]
             new_rows.append(new_row)
 
+            # check if apartment is empty then number of apartments would be 0
             for row in new_rows:
-                if row[9].strip() == '':
+                if row[len(row_template) + 2].strip() == '':
                     row[2] = 1
                 else:
                     row[2] = len(apartments)
