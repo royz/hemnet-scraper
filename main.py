@@ -5,9 +5,6 @@ import json
 import os
 from bs4 import BeautifulSoup
 import openpyxl
-from pprint import pprint
-from string import ascii_uppercase
-from openpyxl.styles import PatternFill
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' \
              '(KHTML, like Gecko) Chrome/86.0.4240.75 Safari/537.36'
@@ -263,6 +260,8 @@ class Hemnet:
             return None
 
     def search(self, page_number=1):
+        if page_number == 3:
+            return
         if not self.location_id:
             self.location_id = self.search_keyword()
             self.load_results()
@@ -301,6 +300,7 @@ class Hemnet:
 
         # get the data for each search result
         for li in lis:
+            url = li.find('a')['href']
             try:
                 address_and_floor = li.find('h2', {'class': 'listing-card__street-address qa-listing-title'}
                                             ).text.strip()
@@ -348,6 +348,7 @@ class Hemnet:
                 if result_id not in self.results:
                     self.results.update({result_id: {
                         'address_and_floor': address_and_floor,
+                        'url': url,
                         'location': location,
                         'address': address,
                         'city': city,
@@ -395,6 +396,29 @@ class Hemnet:
             with open(old_result_path, encoding='utf-8') as f:
                 self.results = json.load(f)
 
+    @staticmethod
+    def get_publish_date(url):
+        headers = {
+            'authority': 'www.hemnet.se',
+            'user-agent': USER_AGENT,
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-user': '?1',
+            'sec-fetch-dest': 'document',
+        }
+
+        response = requests.get(url, headers=headers)
+        # with open('resp.html', 'w', encoding='utf-8') as f:
+        #     f.write(response.text)
+        #     quit()
+        regex = r'(?<="publication_date":")(.*?)(?=")'
+        matches = re.findall(regex, response.text)
+        if matches:
+            print(matches)
+            return matches[0]
+        else:
+            return 'Not Found'
+
 
 def save_cache(data):
     with open(os.path.join(BASE_DIR, 'cache', f'{hemnet.location_id}.json'), 'w', encoding='utf-8') as f:
@@ -404,7 +428,7 @@ def save_cache(data):
 def save_xlsx(json_data, location, search_id):
     print('saving data...')
     headers = ['Id', 'Tot Hits', 'Tot Apartments', 'Address', 'City', 'Area', 'Extra Area',
-               'Floor', 'Name', 'Phone', 'Apartment', 'Type', 'Sold']
+               'Floor', 'Name', 'Phone', 'Apartment', 'Type', 'Publish Date', 'Sold']
 
     data = []
     for match_id, entry in json_data.items():
@@ -433,6 +457,7 @@ def save_xlsx(json_data, location, search_id):
                 '; '.join(match['phone']),
                 f'lgh {apartment}' if apartment else '',
                 'Full' if match['full_match'] else 'Partial',
+                entry['publish_date'] or 'Not Found',
                 entry['sold']
             ]
             new_rows.append(new_row)
@@ -491,6 +516,17 @@ if __name__ == '__main__':
             print(f'page {page_number}: total {hemnet.new_results + hemnet.old_results} '
                   f'results found. {hemnet.new_results} new.')
             page_number += 1
+
+    # get the publish date for the new results from hemnet
+    print('getting publish date for hemnet search results...')
+    for result_id, result in hemnet.results.items():
+        if result.get('publish_date'):
+            print(f"{result_id}: {result['publish_date']}")
+        else:
+            pub_date = hemnet.get_publish_date(result['url'])
+            print(f"{result_id}: {pub_date}")
+            hemnet.results[result_id]['publish_date'] = pub_date
+            hemnet.save_results()
 
     # search the results from hemnet on faktakontroll
     print('\n\n')
