@@ -1,4 +1,6 @@
 import re
+from pprint import pprint
+
 import requests
 import time
 import json
@@ -253,6 +255,7 @@ class Hemnet:
         try:
             data = response.json()[0]
             self.location_name = data["name"]
+            self.location_id = data["id"]
             print(f'search result: {data["name"]}, location id: {data["id"]}')
             return data['id']
         except Exception as e:
@@ -417,7 +420,8 @@ class Hemnet:
         else:
             return 'Not Found'
 
-    def search_sold_properties(self):
+    @staticmethod
+    def search_sold_properties():
         headers = {
             'authority': 'www.hemnet.se',
             'user-agent': USER_AGENT,
@@ -454,6 +458,7 @@ def save_cache(data):
 
 
 def save_xlsx(json_data, location, search_id):
+    # pprint(json_data)
     print('saving data...')
     headers = ['Id', 'Tot Hits', 'Tot Apartments', 'Address', 'City', 'Area', 'Extra Area',
                'Floor', 'Name', 'Phone', 'Apartment', 'Type', 'Publish Date', 'Sold']
@@ -465,7 +470,7 @@ def save_xlsx(json_data, location, search_id):
         address = entry['address'] or ''
         city = entry['city'] or ''
         area = entry['area'] or ''
-        extra_area = entry['extra_area'] or ''
+        extra_area = entry.get('extra_area') or ''
         floor = entry['floor'] or ''
         total_matches = len(entry['matches'])
         apartments = []
@@ -486,7 +491,7 @@ def save_xlsx(json_data, location, search_id):
                 f'lgh {apartment}' if apartment else '',
                 'Full' if match['full_match'] else 'Partial',
                 entry['publish_date'] or 'Not Found',
-                entry['sold']
+                entry.get('sold') or 'No'
             ]
             new_rows.append(new_row)
 
@@ -526,6 +531,10 @@ if __name__ == '__main__':
     if new_or_sold == '2':
         hemnet = Hemnet(search_keyword)
         search_id = hemnet.search_keyword()
+        # print(hemnet.location_id)
+        hemnet.load_results()
+        # print(len(hemnet.results))
+
         if not os.path.exists(os.path.join(BASE_DIR, 'cache', f'{search_id}.json')):
             print(f'search cache not found for {hemnet.location_name}')
             quit()
@@ -536,9 +545,9 @@ if __name__ == '__main__':
 
             print(len(sold_properties), 'sold properties found')
 
-            for property_id in hemnet.results:
+            for property_id in hemnet.results.keys():
                 if property_id in sold_properties:
-                    hemnet.results[property_id]['sold'] = True
+                    hemnet.results[property_id]['sold'] = 'Yes'
 
             hemnet.save_results()
             save_xlsx(hemnet.results, hemnet.location_name, hemnet.location_id)
@@ -575,10 +584,15 @@ if __name__ == '__main__':
         if result.get('publish_date'):
             print(f"{result_id}: {result['publish_date']}")
         else:
-            pub_date = hemnet.get_publish_date(result['url'])
-            print(f"{result_id}: {pub_date}")
+            result_url = result.get('url')
+            if result_url:
+                pub_date = hemnet.get_publish_date(result_url)
+                print(f"{result_id}: {pub_date}")
+            else:
+                pub_date = ''
+                print(f"{result_id}: url not found")
             hemnet.results[result_id]['publish_date'] = pub_date
-            hemnet.save_results()
+    hemnet.save_results()
 
     # search the results from hemnet on faktakontroll
     print('\n\n')
