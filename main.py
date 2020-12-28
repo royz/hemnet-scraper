@@ -341,7 +341,9 @@ class Hemnet:
                 for attrib in attribs:
                     if 'm²' in attrib.text:
                         area_text = attrib.text.strip()
-                        area = attrib.text.strip().removesuffix('m²').strip()
+                        area = attrib.text.strip()
+                        if area.endswith('m²'):
+                            area = area[:len('m²')].strip()
                 result_id = json.loads(li['data-gtm-item-info'])['id']
 
                 # check if the result was found before, ignore the result if true
@@ -373,8 +375,9 @@ class Hemnet:
     @staticmethod
     def parse_area(area_string):
         # remove any extra characters from the area value
-        area_string = area_string.strip().removesuffix('m²').strip().replace(',', '.')
-
+        area_string = area_string.strip()
+        if area_string.endswith('m²'):
+            area_string = area_string[:len('m²')].strip().replace(',', '.')
         area_strings = area_string.split('+')
         area = float(area_strings[0].strip())
         if len(area_strings) > 1:
@@ -431,7 +434,7 @@ class Hemnet:
             'sec-fetch-dest': 'document',
         }
 
-        sold_ids = []
+        sold_properties = []
 
         for page_num in range(1, 51):
             print(f'page: {page_num}')
@@ -447,9 +450,28 @@ class Hemnet:
 
             for link in links:
                 href = link['href']
-                sold_id = href.split('-')[-1]
-                sold_ids.append(sold_id)
-        return sold_ids
+                sold_properties.append(href)
+        return sold_properties
+
+    @staticmethod
+    def get_sold_property_id(property_link):
+        headers = {
+            'authority': 'www.hemnet.se',
+            'user-agent': USER_AGENT,
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-user': '?1',
+            'sec-fetch-dest': 'document',
+        }
+        try:
+            resp = requests.get(property_link, headers)
+            datalayer_text = re.findall(r'(?<=dataLayer = )(.*)(?=;)', resp.text)[0]
+            datalayer = json.loads(datalayer_text)
+            for dl in datalayer:
+                if 'property' in dl.keys():
+                    return dl['property']['id']
+        except:
+            return None
 
 
 def save_cache(data):
@@ -474,6 +496,7 @@ def save_xlsx(json_data, location, search_id):
         floor = entry['floor'] or ''
         total_matches = len(entry['matches'])
         apartments = []
+        sold = entry.get('sold')
         row_template = [match_id, total_matches, 0, address, city, area, extra_area, floor]
 
         new_rows = []
@@ -491,7 +514,7 @@ def save_xlsx(json_data, location, search_id):
                 f'lgh {apartment}' if apartment else '',
                 'Full' if match['full_match'] else 'Partial',
                 entry['publish_date'] or 'Not Found',
-                entry.get('sold') or 'No'
+                sold
             ]
             new_rows.append(new_row)
 
@@ -545,8 +568,16 @@ if __name__ == '__main__':
 
             print(len(sold_properties), 'sold properties found')
 
+            sold_prop_ids = []
+            for i, sold_prop_link in enumerate(sold_properties):
+                print(f'getting property id for ({i + 1}/{len(sold_properties)}):', end=' ')
+                prop_id = hemnet.get_sold_property_id(sold_prop_link)
+                print(prop_id)
+                if prop_id:
+                    sold_prop_ids.append(prop_id)
+
             for property_id in hemnet.results.keys():
-                if property_id in sold_properties:
+                if property_id in sold_prop_ids:
                     hemnet.results[property_id]['sold'] = 'Yes'
 
             hemnet.save_results()
