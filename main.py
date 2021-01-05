@@ -463,15 +463,28 @@ class Hemnet:
             'sec-fetch-user': '?1',
             'sec-fetch-dest': 'document',
         }
+        prop_id = None
+        sold_date = None
         try:
             resp = requests.get(property_link, headers)
             datalayer_text = re.findall(r'(?<=dataLayer = )(.*)(?=;)', resp.text)[0]
             datalayer = json.loads(datalayer_text)
             for dl in datalayer:
                 if 'property' in dl.keys():
-                    return dl['property']['id']
+                    prop_id = dl['property']['id']
+                if 'sold_property' in dl.keys():
+                    sold_date = dl['sold_property']['sold_at_date']
+            return prop_id, sold_date
         except:
-            return None
+            return None, None
+
+
+def get_date(dt):
+    dt = str(dt)
+    try:
+        return re.findall(r'\d+-\d+-\d+', dt)[0]
+    except:
+        return ''
 
 
 def save_cache(data):
@@ -496,7 +509,7 @@ def save_xlsx(json_data, location, search_id):
         floor = entry['floor'] or ''
         total_matches = len(entry['matches'])
         apartments = []
-        sold = entry.get('sold')
+        sold = get_date(entry.get('sold'))
         row_template = [match_id, total_matches, 0, address, city, area, extra_area, floor]
 
         new_rows = []
@@ -513,7 +526,7 @@ def save_xlsx(json_data, location, search_id):
                 '; '.join(match['phone']),
                 f'lgh {apartment}' if apartment else '',
                 'Full' if match['full_match'] else 'Partial',
-                entry['publish_date'] or 'Not Found',
+                get_date(entry['publish_date']),
                 sold
             ]
             new_rows.append(new_row)
@@ -534,6 +547,12 @@ def save_xlsx(json_data, location, search_id):
     sheet.append(headers)
     for row in data:
         sheet.append(row)
+
+    # freeze the header
+    sheet.freeze_panes = 'A2'
+
+    # add filters to all columns
+    sheet.auto_filter.ref = sheet.dimensions
 
     # save the workbook
     try:
@@ -564,21 +583,21 @@ if __name__ == '__main__':
         else:
             hemnet.load_results()
             print('getting list of sold properties...')
-            sold_properties = hemnet.search_sold_properties()
 
-            print(len(sold_properties), 'sold properties found')
+            sold_properties_links = hemnet.search_sold_properties()
 
-            sold_prop_ids = []
-            for i, sold_prop_link in enumerate(sold_properties):
-                print(f'getting property id for ({i + 1}/{len(sold_properties)}):', end=' ')
-                prop_id = hemnet.get_sold_property_id(sold_prop_link)
-                print(prop_id)
-                if prop_id:
-                    sold_prop_ids.append(prop_id)
+            print(len(sold_properties_links), 'sold properties found')
+
+            sold_properties = {}
+            for i, sold_prop_link in enumerate(sold_properties_links):
+                print(f'getting sold date for ({i + 1}/{len(sold_properties_links)}):', end=' ')
+                prop_id, sold_date = hemnet.get_sold_property_id(sold_prop_link)
+                print(prop_id, f'({sold_date})')
+                sold_properties[prop_id] = sold_date
 
             for property_id in hemnet.results.keys():
-                if property_id in sold_prop_ids:
-                    hemnet.results[property_id]['sold'] = 'Yes'
+                if int(property_id) in sold_properties.keys():
+                    hemnet.results[property_id]['sold'] = sold_properties[int(property_id)]
 
             hemnet.save_results()
             save_xlsx(hemnet.results, hemnet.location_name, hemnet.location_id)
