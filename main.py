@@ -463,19 +463,26 @@ class Hemnet:
             'sec-fetch-user': '?1',
             'sec-fetch-dest': 'document',
         }
-        prop_id = None
-        sold_date = None
+
         try:
-            resp = requests.get(property_link, headers)
+            sold_date = 'sold but date not found'
+            resp = requests.get(property_link, headers=headers)
+
+            with open('hemnet-error.html', 'w', encoding='utf-8') as f:
+                f.write(resp.text)
+
             datalayer_text = re.findall(r'(?<=dataLayer = )(.*)(?=;)', resp.text)[0]
             datalayer = json.loads(datalayer_text)
             for dl in datalayer:
-                if 'property' in dl.keys():
-                    prop_id = dl['property']['id']
-                if 'sold_property' in dl.keys():
-                    sold_date = dl['sold_property']['sold_at_date']
+                try:
+                    if 'property' in dl.keys():
+                        prop_id = dl['property']['id']
+                    if 'sold_property' in dl.keys():
+                        sold_date = dl['sold_property']['sold_at_date']
+                except:
+                    pass
             return prop_id, sold_date
-        except:
+        except StopIteration:
             return None, None
 
 
@@ -492,11 +499,20 @@ def save_cache(data):
         json.dump(data, f, indent=2)
 
 
+def get_phone_columns(phone_numbers):
+    if len(phone_numbers) > 6:
+        phone_numbers = phone_numbers[:6]
+    elif len(phone_numbers) < 6:
+        phone_numbers += [''] * (6 - len(phone_numbers))
+    return phone_numbers
+
+
 def save_xlsx(json_data, location, search_id):
-    # pprint(json_data)
     print('saving data...')
     headers = ['Id', 'Tot Hits', 'Tot Apartments', 'Address', 'City', 'Area', 'Extra Area',
-               'Floor', 'Name', 'Phone', 'Apartment', 'Type', 'Publish Date', 'Sold']
+               'Floor', 'Name'] + [
+                  'Phone 1', 'Phone 2', 'Phone 3', 'Phone 4', 'Phone 5', 'Phone 6',
+              ] + ['Apartment', 'Type', 'Publish Date', 'Sold']
 
     data = []
     for match_id, entry in json_data.items():
@@ -521,19 +537,19 @@ def save_xlsx(json_data, location, search_id):
             else:
                 apartments.append(match['apartment'])
 
-            new_row += [
-                match['name'],
-                '; '.join(match['phone']),
-                f'lgh {apartment}' if apartment else '',
-                'Full' if match['full_match'] else 'Partial',
-                get_date(entry['publish_date']),
-                sold
-            ]
+            new_row += [match['name']
+                        ] + get_phone_columns(match['phone']) + [
+                           f'lgh {apartment}' if apartment else '',
+                           'Full' if match[
+                               'full_match'] else 'Partial',
+                           get_date(entry['publish_date']),
+                           sold
+                       ]
             new_rows.append(new_row)
 
             # check if apartment is empty then number of apartments would be 0
             for row in new_rows:
-                if row[len(row_template) + 2].strip() == '':
+                if row[len(row_template) + 7].strip() == '':
                     row[2] = 1
                 else:
                     row[2] = len(apartments)
@@ -573,9 +589,6 @@ if __name__ == '__main__':
     if new_or_sold == '2':
         hemnet = Hemnet(search_keyword)
         search_id = hemnet.search_keyword()
-        # print(hemnet.location_id)
-        hemnet.load_results()
-        # print(len(hemnet.results))
 
         if not os.path.exists(os.path.join(BASE_DIR, 'cache', f'{search_id}.json')):
             print(f'search cache not found for {hemnet.location_name}')
@@ -586,6 +599,12 @@ if __name__ == '__main__':
 
             sold_properties_links = hemnet.search_sold_properties()
 
+            # with open('sold-properties_links.json', 'r', encoding='utf-8') as f:
+            #     sold_properties_links = json.load(f)
+
+            # with open('sold-properties_links.json', 'w', encoding='utf-8') as f:
+            #     json.dump(sold_properties_links, f, indent=2)
+
             print(len(sold_properties_links), 'sold properties found')
 
             sold_properties = {}
@@ -594,6 +613,9 @@ if __name__ == '__main__':
                 prop_id, sold_date = hemnet.get_sold_property_id(sold_prop_link)
                 print(prop_id, f'({sold_date})')
                 sold_properties[prop_id] = sold_date
+
+            with open('sold-property-ids.json', 'w', encoding='utf-8') as f:
+                json.dump(sold_properties, f, indent=2)
 
             for property_id in hemnet.results.keys():
                 if int(property_id) in sold_properties.keys():
