@@ -76,7 +76,7 @@ class Faktakontroll:
     def search(self, hemnet_result, index=0, total=0):
         search_address = f'{hemnet_result["address"]}, {hemnet_result["city"]}'
         print(
-            f'[{index} / {total}] {search_address} [area: {hemnet_result["area"]}]', end=': ')
+            f'[{index} / {total}] {search_address} [area: {hemnet_result.get("area")}]', end=': ')
         cookies = {
             'ext_name': 'ojplmecpdpgccookcobabopnaifgidhf',
             'user': 'true',
@@ -106,6 +106,10 @@ class Faktakontroll:
 
         response = requests.post('https://www.faktakontroll.se/app/api/search',
                                  headers=headers, cookies=cookies, json=data)
+
+        # with open('fakta-search.json', 'w', encoding='utf-8') as f:
+        #     json.dump(response.json(), f, indent=2)
+
         # refresh the tokens when their validity expires
         if response.status_code != 200:
             print('faktakontroll token expired. refreshing token...')
@@ -191,7 +195,14 @@ class Faktakontroll:
 
             # try to fetch the phone number if available
             if is_match:
-                potential_match['phone'] = self.get_phone_number(result['id'])
+                more_data = self.get_more_details(result['id'])
+
+                # pprint(more_data)
+
+                potential_match['phone'] = more_data['numbers']
+                potential_match['age'] = more_data['age']
+                potential_match['gender'] = more_data['gender']
+                potential_match['personal_number'] = more_data['personal_number']
                 matches.append(potential_match)
             else:
                 no_matches.append(potential_match)
@@ -200,7 +211,7 @@ class Faktakontroll:
         hemnet_result.update({'matches': matches, 'complete': True})
         return hemnet_result
 
-    def get_phone_number(self, result_id):
+    def get_more_details(self, result_id):
         # print('getting phone number')
         cookies = {
             'ext_name': 'ojplmecpdpgccookcobabopnaifgidhf',
@@ -226,10 +237,30 @@ class Faktakontroll:
         try:
             response = requests.get(f'https://www.faktakontroll.se/app/api/search/entity/{result_id}',
                                     headers=headers, params=params, cookies=cookies)
-            phone_number_list = response.json()['individual']['phoneNumbers']
-            return [phone_number['phoneNumber'] for phone_number in phone_number_list]
+
+            # with open('fakta-deep-search.json', 'w', encoding='utf-8') as f:
+            #     json.dump(response.json(), f, indent=2)
+
+            data = response.json()['individual']
+
+            try:
+                phone_numbers = [phone_number['phoneNumber'] for phone_number in data['phoneNumbers']]
+            except:
+                phone_numbers = []
+
+            return {
+                'numbers': phone_numbers,
+                'age': data.get('age'),
+                'gender': data.get('gender'),
+                'personal_number': data.get('personalNumber')
+            }
         except:
-            return []
+            return {
+                'numbers': [],
+                'age': None,
+                'gender': None,
+                'personal_number': None
+            }
 
 
 class Hemnet:
@@ -401,7 +432,7 @@ class Hemnet:
                 self.results = json.load(f)
 
     @staticmethod
-    def get_publish_date(url):
+    def get_more_data(url):
         headers = {
             'authority': 'www.hemnet.se',
             'user-agent': USER_AGENT,
@@ -415,13 +446,25 @@ class Hemnet:
         # with open('resp.html', 'w', encoding='utf-8') as f:
         #     f.write(response.text)
         #     quit()
-        regex = r'(?<="publication_date":")(.*?)(?=")'
-        matches = re.findall(regex, response.text)
+
+        # find publish date
+        matches = re.findall(r'(?<="publication_date":")(.*?)(?=")', response.text)
         if matches:
-            print(matches)
-            return matches[0]
+            publication_date = matches[0]
         else:
-            return 'Not Found'
+            publication_date = None
+
+        # find housing type
+        matches = re.findall(r'(?<="housing_form":")(.*?)(?=")', response.text)
+        if matches:
+            housing_form = matches[0]
+        else:
+            housing_form = None
+
+        return {
+            'publication_date': publication_date,
+            'housing_form': housing_form
+        }
 
     @staticmethod
     def search_sold_properties():
@@ -509,8 +552,8 @@ def get_phone_columns(phone_numbers):
 
 def save_xlsx(json_data, location, search_id):
     print('saving data...')
-    headers = ['Id', 'Tot Hits', 'Tot Apartments', 'Address', 'City', 'Area', 'Extra Area',
-               'Floor', 'Name'] + [
+    headers = ['Id', 'Tot Hits', 'Tot Apartments', 'Address', 'City', 'Bostadstyp', 'Area', 'Extra Area',
+               'Floor', 'Name', 'Kön', 'Personnr', 'Ålder'] + [
                   'Phone 1', 'Phone 2', 'Phone 3', 'Phone 4', 'Phone 5', 'Phone 6',
               ] + ['Apartment', 'Type', 'Publish Date', 'Sold']
 
@@ -520,13 +563,14 @@ def save_xlsx(json_data, location, search_id):
             continue
         address = entry['address'] or ''
         city = entry['city'] or ''
+        house_type = entry.get('house_type') or ''
         area = entry['area'] or ''
         extra_area = entry.get('extra_area') or ''
         floor = entry['floor'] or ''
         total_matches = len(entry['matches'])
         apartments = []
         sold = get_date(entry.get('sold'))
-        row_template = [match_id, total_matches, 0, address, city, area, extra_area, floor]
+        row_template = [match_id, total_matches, 1, address, city, house_type, area, extra_area, floor]
 
         new_rows = []
         for match in entry['matches']:
@@ -537,7 +581,8 @@ def save_xlsx(json_data, location, search_id):
             else:
                 apartments.append(match['apartment'])
 
-            new_row += [match['name']
+            new_row += [match['name'], match.get('gender') or '', match.get('personal_number') or '',
+                        match.get('age') or '',
                         ] + get_phone_columns(match['phone']) + [
                            f'lgh {apartment}' if apartment else '',
                            'Full' if match[
@@ -547,9 +592,9 @@ def save_xlsx(json_data, location, search_id):
                        ]
             new_rows.append(new_row)
 
-            # check if apartment is empty then number of apartments would be 0
+            # check if apartment is empty then number of apartments would be 1
             for row in new_rows:
-                if row[len(row_template) + 7].strip() == '':
+                if row[len(row_template) + 10].strip() == '':
                     row[2] = 1
                 else:
                     row[2] = len(apartments)
@@ -651,19 +696,23 @@ if __name__ == '__main__':
             page_number += 1
 
     # get the publish date for the new results from hemnet
-    print('getting publish date for hemnet search results...')
+    print('getting publish date and housing type for hemnet search results...')
     for result_id, result in hemnet.results.items():
         if result.get('publish_date'):
             print(f"{result_id}: {result['publish_date']}")
         else:
             result_url = result.get('url')
             if result_url:
-                pub_date = hemnet.get_publish_date(result_url)
-                print(f"{result_id}: {pub_date}")
+                more_details = hemnet.get_more_data(result_url)
+                pub_date = more_details['publication_date']
+                house_type = more_details['housing_form']
+                print(f"{result_id} ({house_type}): {pub_date}")
             else:
                 pub_date = ''
+                house_type = ''
                 print(f"{result_id}: url not found")
             hemnet.results[result_id]['publish_date'] = pub_date
+            hemnet.results[result_id]['house_type'] = house_type
     hemnet.save_results()
 
     # search the results from hemnet on faktakontroll
