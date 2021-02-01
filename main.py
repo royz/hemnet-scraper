@@ -466,15 +466,18 @@ class Hemnet:
             'housing_form': housing_form
         }
 
-    @staticmethod
-    def search_sold_properties():
+    def search_sold_properties(self):
         headers = {
             'authority': 'www.hemnet.se',
-            'user-agent': USER_AGENT,
+            'upgrade-insecure-requests': '1',
+            'dnt': '1',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36',
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
             'sec-fetch-site': 'same-origin',
             'sec-fetch-mode': 'navigate',
             'sec-fetch-user': '?1',
             'sec-fetch-dest': 'document',
+            'accept-language': 'en-IN,en-GB;q=0.9,en-US;q=0.8,en;q=0.7,sv;q=0.6',
         }
 
         sold_properties = []
@@ -483,14 +486,13 @@ class Hemnet:
             print(f'page: {page_num}')
             params = {
                 'housing_form_groups[]': ['houses', 'row_houses', 'apartments'],
-                'location_ids[]': '17744',
+                'location_ids[]': self.location_id,
                 'page': page_num
             }
 
             response = requests.get('https://www.hemnet.se/salda/bostader', headers=headers, params=params)
             soup = BeautifulSoup(response.content, 'html.parser')
-            links = soup.find_all('a', {'class': 'item-link-container'})
-
+            links = soup.find_all('a', {'class': 'sold-property-listing'})
             for link in links:
                 href = link['href']
                 sold_properties.append(href)
