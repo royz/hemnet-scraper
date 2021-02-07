@@ -513,8 +513,8 @@ class Hemnet:
             sold_date = 'sold but date not found'
             resp = requests.get(property_link, headers=headers)
 
-            with open('hemnet-error.html', 'w', encoding='utf-8') as f:
-                f.write(resp.text)
+            # with open('hemnet-error.html', 'w', encoding='utf-8') as f:
+            #     f.write(resp.text)
 
             datalayer_text = re.findall(r'(?<=dataLayer = )(.*)(?=;)', resp.text)[0]
             datalayer = json.loads(datalayer_text)
@@ -527,7 +527,7 @@ class Hemnet:
                 except:
                     pass
             return prop_id, sold_date
-        except StopIteration:
+        except Exception as e:
             return None, None
 
 
